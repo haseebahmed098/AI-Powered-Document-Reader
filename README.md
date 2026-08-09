@@ -3,19 +3,31 @@
 Instead of manually searching through lengthy documents, users can simply upload a document and ask questions directly from its content. The AI processes the document and provides relevant, intelligent responses.
 
 ✨ Key Features:
+
 🔹 Upload and read documents
+
 🔹 Extract text from uploaded files
+
 🔹 Chat with your own document
+
 🔹 Ask questions in natural language
+
 🔹 Get AI-generated responses based on the document
+
 🔹 LLM API integration for intelligent document understanding
 
 🛠️ Technologies & Concepts:
+
 • Generative AI
+
 • Large Language Models (LLMs)
+
 • Natural Language Processing (NLP)
-• API Integration
+
+• API Integration (GroqCloud)
+
 • Prompt Engineering
+
 • HTML, CSS & JavaScript
 
 🎯 What I Learned:
