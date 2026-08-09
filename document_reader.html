@@ -1,0 +1,2088 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>documentReader — chat with your document</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<style>
+
+  :root{
+    --ink:#211D16;
+    --ink-soft:#6B6353;
+    --ink-faint:#8C8570;
+    --paper:#EFE7D0;
+    --paper-panel:#F8F2E1;
+    --paper-white:#FDFBF3;
+    --line:#D9CBA0;
+    --line-soft:#E4D9B4;
+    --amber:#DB9A2C;
+    --amber-soft:#F3DEA8;
+    --amber-softer:#F8EBCB;
+    --amber-deep:#7A4E0A;
+    --slate:#35597E;
+    --red:#A23B31;
+    --red-soft:#F1D8D2;
+    --shadow-sm: 0 1px 2px rgba(33,29,22,0.06);
+    --shadow-md: 0 4px 16px rgba(33,29,22,0.08);
+    --shadow-lg: 0 12px 40px rgba(33,29,22,0.14);
+    --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Book Antiqua", serif;
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    --radius: 10px;
+    --radius-sm: 6px;
+  }
+
+  *{ box-sizing:border-box; }
+
+  html,body{
+    margin:0; padding:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--font-body);
+    height:100%;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  body{
+    display:flex;
+    flex-direction:column;
+    min-height:100vh;
+    background-image:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(219,154,44,0.07), transparent),
+      radial-gradient(ellipse 700px 500px at 100% 0%, rgba(53,89,126,0.05), transparent);
+  }
+
+  ::selection{ background:var(--amber-soft); }
+
+  /* ---------- Header ---------- */
+
+  header{
+    padding:22px 36px;
+    border-bottom:1px solid var(--line);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:16px;
+    background:rgba(253,251,243,0.5);
+    backdrop-filter:blur(2px);
+    position:relative;
+  }
+
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+
+  .brand-mark{
+    width:34px; height:34px;
+    border-radius:8px;
+    background:var(--ink);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-shrink:0;
+  }
+
+  .brand-mark svg{ width:18px; height:18px; }
+
+  .brand-text h1{
+    font-family:var(--font-display);
+    font-size:22px;
+    font-weight:400;
+    letter-spacing:0.2px;
+    margin:0;
+    line-height:1.1;
+  }
+
+  .brand-text h1 em{
+    color:var(--amber-deep);
+    font-style:italic;
+  }
+
+  .brand-text p{
+    margin:2px 0 0;
+    font-size:12px;
+    color:var(--ink-faint);
+    font-family:var(--font-mono);
+    letter-spacing:0.02em;
+  }
+
+  .doc-status{
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+
+  .doc-badge{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    background:var(--paper-panel);
+    border:1px solid var(--line);
+    border-radius:20px;
+    padding:6px 14px 6px 8px;
+  }
+
+  .doc-badge .type-chip{
+    font-family:var(--font-mono);
+    font-size:9.5px;
+    font-weight:700;
+    letter-spacing:0.03em;
+    background:var(--ink);
+    color:var(--paper-white);
+    border-radius:4px;
+    padding:3px 6px;
+  }
+
+  .doc-badge .doc-name{
+    font-size:13px;
+    font-weight:500;
+    max-width:220px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+
+  .doc-badge .doc-meta{
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--ink-faint);
+  }
+
+  button.history-btn{
+    display:flex;
+    align-items:center;
+    gap:7px;
+    background:var(--paper-white);
+    border:1px solid var(--line);
+    border-radius:20px;
+    padding:7px 14px 7px 12px;
+    font-family:var(--font-body);
+    font-size:13px;
+    font-weight:500;
+    color:var(--ink);
+    cursor:pointer;
+    transition:border-color .15s ease, background .15s ease;
+  }
+
+  button.history-btn:hover{ border-color:var(--amber); background:var(--amber-softer); }
+
+  button.history-btn svg{ width:14px; height:14px; color:var(--ink-soft); }
+
+  .history-count{
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    background:var(--ink);
+    color:var(--paper-white);
+    border-radius:10px;
+    padding:1px 6px;
+    min-width:16px;
+    text-align:center;
+  }
+
+  #history-panel{
+    display:none;
+    position:absolute;
+    top:64px;
+    right:36px;
+    width:320px;
+    max-height:420px;
+    background:var(--paper-white);
+    border:1px solid var(--line);
+    border-radius:12px;
+    box-shadow:var(--shadow-lg);
+    z-index:40;
+    overflow:hidden;
+    flex-direction:column;
+  }
+
+  #history-panel.open{ display:flex; }
+
+  button.history-add-btn{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    width:100%;
+    text-align:left;
+    background:var(--amber-softer);
+    border:none;
+    border-bottom:1px solid var(--line-soft);
+    padding:13px 16px;
+    font-family:var(--font-body);
+    font-size:13.5px;
+    font-weight:500;
+    color:var(--amber-deep);
+    cursor:pointer;
+    flex-shrink:0;
+  }
+
+  button.history-add-btn:hover{ background:var(--amber-soft); }
+
+  button.history-add-btn svg{ width:15px; height:15px; }
+
+  #history-list{
+    overflow-y:auto;
+    flex:1;
+  }
+
+  .history-empty{
+    padding:20px 16px;
+    font-size:12.5px;
+    color:var(--ink-faint);
+    text-align:center;
+  }
+
+  .history-item{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    width:100%;
+    text-align:left;
+    background:none;
+    border:none;
+    border-left:3px solid transparent;
+    border-bottom:1px solid var(--line-soft);
+    padding:11px 14px 11px 13px;
+    cursor:pointer;
+    font-family:var(--font-body);
+  }
+
+  .history-item:hover{ background:var(--paper-panel); }
+
+  .history-item.active{
+    background:var(--amber-softer);
+    border-left-color:var(--amber-deep);
+  }
+
+  .history-item .type-chip{
+    font-family:var(--font-mono);
+    font-size:9px;
+    font-weight:700;
+    background:var(--ink);
+    color:var(--paper-white);
+    border-radius:4px;
+    padding:2px 5px;
+    flex-shrink:0;
+  }
+
+  .history-item .item-main{
+    min-width:0;
+    flex:1;
+  }
+
+  .history-item .item-name{
+    font-size:13px;
+    font-weight:500;
+    color:var(--ink);
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+
+  .history-item .item-meta{
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    color:var(--ink-faint);
+    margin-top:1px;
+  }
+
+  /* ---------- Upload screen ---------- */
+
+  #upload-screen{
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:60px 24px;
+  }
+
+  .upload-card{
+    max-width:600px;
+    width:100%;
+    text-align:center;
+  }
+
+  .back-to-docs{
+    display:none;
+    margin:0 auto 22px;
+    align-items:center;
+    gap:6px;
+    justify-content:center;
+  }
+
+  .back-to-docs.visible{ display:flex; }
+
+  .upload-eyebrow{
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    color:var(--amber-deep);
+    margin-bottom:10px;
+  }
+
+  .upload-card > h2{
+    font-family:var(--font-display);
+    font-weight:400;
+    font-size:34px;
+    margin:0 0 10px;
+    line-height:1.2;
+  }
+
+  .upload-card > p.sub{
+    font-size:14.5px;
+    color:var(--ink-soft);
+    line-height:1.6;
+    max-width:440px;
+    margin:0 auto 34px;
+  }
+
+  .dropzone{
+    border:1.5px dashed var(--line);
+    border-radius:14px;
+    background:var(--paper-white);
+    padding:48px 28px;
+    cursor:pointer;
+    transition:border-color .18s ease, background .18s ease, box-shadow .18s ease, transform .18s ease;
+    box-shadow:var(--shadow-sm);
+  }
+
+  .dropzone:hover{
+    border-color:var(--amber);
+    box-shadow:var(--shadow-md);
+    transform:translateY(-1px);
+  }
+
+  .dropzone.dragover{
+    border-color:var(--amber);
+    background:var(--amber-softer);
+    box-shadow:var(--shadow-md);
+  }
+
+  .dropzone .glyph{
+    width:46px; height:46px;
+    margin:0 auto 14px;
+    border-radius:50%;
+    background:var(--amber-softer);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+
+  .dropzone .glyph svg{ width:22px; height:22px; color:var(--amber-deep); }
+
+  .dropzone h3{
+    font-family:var(--font-display);
+    font-weight:400;
+    font-size:19px;
+    margin:0 0 6px;
+  }
+
+  .dropzone p{
+    margin:0;
+    font-size:13px;
+    color:var(--ink-faint);
+  }
+
+  .format-chips{
+    display:flex;
+    justify-content:center;
+    gap:8px;
+    margin-top:18px;
+    flex-wrap:wrap;
+  }
+
+  .format-chip{
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    font-weight:600;
+    letter-spacing:0.02em;
+    color:var(--ink-soft);
+    background:var(--paper-panel);
+    border:1px solid var(--line);
+    border-radius:5px;
+    padding:4px 9px;
+  }
+
+  #file-input{ display:none; }
+
+  .upload-meta{
+    margin-top:18px;
+    font-size:12.5px;
+    color:var(--ink-soft);
+    font-family:var(--font-mono);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+  }
+
+  .upload-meta.active{ display:flex; }
+
+  .spinner{
+    width:12px; height:12px;
+    border-radius:50%;
+    border:2px solid var(--line);
+    border-top-color:var(--amber-deep);
+    animation:spin .7s linear infinite;
+  }
+
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  .sample-row{
+    margin-top:26px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:12px;
+  }
+
+  .sample-row .rule{
+    height:1px;
+    width:56px;
+    background:var(--line);
+  }
+
+  button.link-btn{
+    background:none;
+    border:none;
+    color:var(--slate);
+    font-family:var(--font-body);
+    font-size:13px;
+    font-weight:500;
+    cursor:pointer;
+    padding:0;
+  }
+
+  button.link-btn:hover{ text-decoration:underline; }
+
+  button.link-btn svg{ width:13px; height:13px; vertical-align:-2px; margin-right:3px; }
+
+  #upload-error{
+    margin-top:18px;
+    font-size:13px;
+    color:var(--red);
+    background:var(--red-soft);
+    border-radius:8px;
+    padding:9px 14px;
+    display:none;
+  }
+
+  /* ---------- Main split view ---------- */
+
+  #workspace{
+    flex:1;
+    display:none;
+    min-height:0;
+  }
+
+  #workspace.active{ display:flex; }
+
+  .pane{
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+  }
+
+  #source-backdrop{
+    display:none;
+    position:fixed;
+    inset:0;
+    background:rgba(33,29,22,0.35);
+    z-index:55;
+  }
+
+  #source-backdrop.active{ display:block; }
+
+  #source-pane{
+    position:fixed;
+    top:0;
+    right:0;
+    height:100vh;
+    width:440px;
+    max-width:92vw;
+    border-left:1px solid var(--line);
+    background:var(--paper-panel);
+    z-index:60;
+    transform:translateX(100%);
+    transition:transform .28s ease;
+    box-shadow:var(--shadow-lg);
+  }
+
+  #source-pane.open{ transform:translateX(0); }
+
+  #chat-pane{
+    width:100%;
+    background:var(--paper);
+  }
+
+  .pane-header{
+    padding:16px 22px;
+    border-bottom:1px solid var(--line);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex-shrink:0;
+  }
+
+  .pane-header h3{
+    font-family:var(--font-display);
+    font-weight:400;
+    font-size:16px;
+    margin:0;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+
+  .pane-header h3 svg{ width:15px; height:15px; color:var(--amber-deep); }
+
+  .pane-header .meta{
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--ink-faint);
+  }
+
+  button.close-drawer-btn{
+    background:none;
+    border:1px solid var(--line);
+    border-radius:6px;
+    width:26px; height:26px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    color:var(--ink-soft);
+    flex-shrink:0;
+  }
+
+  button.close-drawer-btn:hover{ background:var(--paper-white); color:var(--ink); }
+  button.close-drawer-btn svg{ width:14px; height:14px; }
+
+  button.view-source-btn{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    background:var(--paper-white);
+    border:1px solid var(--line);
+    border-radius:7px;
+    padding:6px 12px;
+    font-family:var(--font-body);
+    font-size:12.5px;
+    font-weight:500;
+    color:var(--ink-soft);
+    cursor:pointer;
+    transition:border-color .15s ease, color .15s ease;
+  }
+
+  button.view-source-btn:hover{ border-color:var(--amber); color:var(--amber-deep); }
+  button.view-source-btn svg{ width:13px; height:13px; }
+
+  .pane-body{
+    flex:1;
+    overflow-y:auto;
+    padding:22px 26px;
+  }
+
+  /* ---------- Source document viewer ---------- */
+
+  #source-text{
+    font-family:var(--font-display);
+    font-size:14.5px;
+    line-height:1.8;
+    color:var(--ink);
+    white-space:pre-wrap;
+  }
+
+  #source-text .chunk{
+    padding:1px 2px;
+    border-radius:3px;
+    transition:background .5s ease, box-shadow .5s ease;
+  }
+
+  #source-text .chunk.lit{
+    background:var(--amber-soft);
+    box-shadow:0 0 0 1px var(--amber);
+  }
+
+  #source-text .chunk.flash{
+    background:var(--amber);
+  }
+
+  /* ---------- Chat ---------- */
+
+  #chat-log{
+    flex:1;
+    overflow-y:auto;
+    padding:22px 26px;
+    display:flex;
+    flex-direction:column;
+    gap:20px;
+  }
+
+  .empty-chat{
+    margin:auto;
+    text-align:center;
+    color:var(--ink-faint);
+    font-size:13.5px;
+    max-width:300px;
+    line-height:1.65;
+  }
+
+  .empty-chat svg{ width:28px; height:28px; color:var(--line); margin-bottom:10px; }
+
+  .msg{ max-width:90%; }
+
+  .msg.user{ align-self:flex-end; }
+
+  .msg.user .bubble{
+    background:var(--ink);
+    color:var(--paper-white);
+    border-radius:12px 12px 3px 12px;
+    padding:11px 15px;
+    font-size:14px;
+    line-height:1.5;
+    box-shadow:var(--shadow-sm);
+  }
+
+  .msg.answer{ align-self:flex-start; width:100%; }
+
+  .answer-block{
+    background:var(--paper-white);
+    border:1px solid var(--line-soft);
+    border-radius:12px 12px 12px 3px;
+    padding:15px 18px;
+    box-shadow:var(--shadow-sm);
+  }
+
+  .answer-block .label{
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    letter-spacing:0.07em;
+    text-transform:uppercase;
+    color:var(--amber-deep);
+    margin-bottom:8px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+
+  .answer-block .label svg{ width:12px; height:12px; }
+
+  .answer-block p{
+    margin:0;
+    font-size:14.5px;
+    line-height:1.7;
+    white-space:pre-wrap;
+  }
+
+  .citations{
+    margin-top:12px;
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+  }
+
+  .citation-chip{
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--amber-deep);
+    background:var(--amber-softer);
+    border:1px solid var(--amber-soft);
+    border-radius:5px;
+    padding:2px 8px;
+    cursor:pointer;
+    transition:background .15s ease, border-color .15s ease;
+  }
+
+  .citation-chip:hover{
+    background:var(--amber);
+    border-color:var(--amber);
+    color:#3B2600;
+  }
+
+  .not-found-banner{
+    margin-top:10px;
+    font-size:12px;
+    color:var(--red);
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+
+  .plain-block{
+    margin-top:12px;
+    background:var(--paper-panel);
+    border:1px dashed var(--line);
+    border-radius:10px;
+    padding:13px 16px;
+  }
+
+  .plain-block .label{
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    letter-spacing:0.07em;
+    text-transform:uppercase;
+    color:var(--ink-faint);
+    margin-bottom:7px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+  }
+
+  .plain-block p{
+    margin:0;
+    font-size:14px;
+    line-height:1.6;
+    color:var(--ink);
+    white-space:pre-wrap;
+  }
+
+  .flag-btn{
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    background:var(--paper-white);
+    border:1px solid var(--line);
+    border-radius:5px;
+    padding:2px 9px;
+    color:var(--ink-soft);
+    cursor:pointer;
+    transition:all .15s ease;
+  }
+
+  .flag-btn:hover{ border-color:var(--red); color:var(--red); }
+
+  .flag-btn.flagged{
+    background:var(--red-soft);
+    border-color:var(--red);
+    color:var(--red);
+  }
+
+  .plain-block.flagged{ border-color:var(--red); border-style:solid; }
+
+  .loading-msg{
+    align-self:flex-start;
+    font-family:var(--font-mono);
+    font-size:12px;
+    color:var(--ink-faint);
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:4px 0;
+  }
+
+  .dot{
+    width:5px; height:5px; border-radius:50%;
+    background:var(--amber-deep);
+    animation:pulse 1s infinite ease-in-out;
+  }
+  .dot:nth-child(2){ animation-delay:.15s; }
+  .dot:nth-child(3){ animation-delay:.3s; }
+  @keyframes pulse{ 0%,80%,100%{opacity:.25;} 40%{opacity:1;} }
+
+  .error-msg{
+    align-self:flex-start;
+    font-size:13px;
+    color:var(--red);
+    background:var(--red-soft);
+    border-radius:8px;
+    padding:9px 13px;
+  }
+
+  /* ---------- Input bar ---------- */
+
+  #input-bar{
+    border-top:1px solid var(--line);
+    padding:16px 26px;
+    flex-shrink:0;
+    background:rgba(239,231,208,0.5);
+  }
+
+  .compare-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-bottom:11px;
+    font-size:12.5px;
+    color:var(--ink-soft);
+  }
+
+  .compare-row input[type=checkbox]{ accent-color:var(--amber-deep); }
+
+  .ask-row{
+    display:flex;
+    gap:10px;
+    align-items:flex-end;
+  }
+
+  #question-input{
+    flex:1;
+    resize:none;
+    border:1px solid var(--line);
+    border-radius:10px;
+    background:var(--paper-white);
+    padding:11px 14px;
+    font-family:var(--font-body);
+    font-size:14px;
+    color:var(--ink);
+    line-height:1.4;
+    height:44px;
+    max-height:120px;
+    box-shadow:var(--shadow-sm);
+    transition:border-color .15s ease, box-shadow .15s ease;
+  }
+
+  #question-input:focus{
+    outline:none;
+    border-color:var(--amber);
+    box-shadow:0 0 0 3px var(--amber-softer);
+  }
+
+  button.ask-btn{
+    background:var(--ink);
+    color:var(--paper-white);
+    border:none;
+    border-radius:10px;
+    width:44px; height:44px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    flex-shrink:0;
+    transition:background .15s ease, transform .1s ease;
+    box-shadow:var(--shadow-sm);
+  }
+
+  button.ask-btn svg{ width:17px; height:17px; }
+
+  button.ask-btn:disabled{ opacity:0.4; cursor:default; }
+
+  button.ask-btn:not(:disabled):hover{ background:#3A362B; }
+  button.ask-btn:not(:disabled):active{ transform:scale(0.94); }
+
+  /* ---------- Footer / summary ---------- */
+
+  #footer-bar{
+    border-top:1px solid var(--line);
+    padding:11px 26px;
+    display:none;
+    align-items:center;
+    justify-content:space-between;
+    flex-shrink:0;
+    background:var(--paper-panel);
+  }
+
+  #footer-bar.active{ display:flex; }
+
+  #footer-bar .hint{ font-size:12px; color:var(--ink-faint); }
+
+  button.summary-btn{
+    background:var(--paper-white);
+    border:1px solid var(--amber-deep);
+    color:var(--amber-deep);
+    border-radius:7px;
+    padding:7px 16px;
+    font-size:12.5px;
+    font-weight:500;
+    font-family:var(--font-body);
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    transition:background .15s ease;
+  }
+
+  button.summary-btn svg{ width:13px; height:13px; }
+
+  button.summary-btn:hover{ background:var(--amber-softer); }
+  button.summary-btn:disabled{ opacity:0.5; cursor:default; }
+
+  /* ---------- Summary modal ---------- */
+
+  #summary-overlay{
+    display:none;
+    position:fixed;
+    inset:0;
+    background:rgba(33,29,22,0.5);
+    align-items:center;
+    justify-content:center;
+    z-index:50;
+    padding:24px;
+  }
+
+  #summary-overlay.active{ display:flex; }
+
+  #summary-modal{
+    background:var(--paper-white);
+    border-radius:14px;
+    max-width:640px;
+    width:100%;
+    max-height:82vh;
+    display:flex;
+    flex-direction:column;
+    box-shadow:var(--shadow-lg);
+  }
+
+  #summary-modal .modal-header{
+    padding:18px 24px;
+    border-bottom:1px solid var(--line-soft);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+  }
+
+  #summary-modal .modal-header h3{
+    font-family:var(--font-display);
+    font-weight:400;
+    font-size:19px;
+    margin:0;
+  }
+
+  #summary-modal .modal-body{
+    padding:22px 24px;
+    overflow-y:auto;
+    font-size:14px;
+    line-height:1.75;
+    white-space:pre-wrap;
+  }
+
+  #summary-modal .modal-footer{
+    padding:14px 24px;
+    border-top:1px solid var(--line-soft);
+    display:flex;
+    justify-content:flex-end;
+    gap:10px;
+  }
+
+  button.plain-icon-btn{
+    background:var(--paper-white);
+    border:1px solid var(--line);
+    border-radius:7px;
+    padding:7px 14px;
+    font-size:12.5px;
+    font-family:var(--font-body);
+    color:var(--ink);
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+
+  button.plain-icon-btn svg{ width:13px; height:13px; }
+
+  button.plain-icon-btn:hover{ background:var(--paper-panel); }
+
+  /* ---------- Responsive ---------- */
+
+  @media (max-width:820px){
+    header{ padding:16px 18px; }
+    .upload-card > h2{ font-size:26px; }
+    .dropzone{ padding:36px 20px; }
+    #history-panel{ right:16px; left:16px; width:auto; }
+    #source-pane{ width:100vw; max-width:100vw; }
+  }
+
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#FDFBF3" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+    </div>
+    <div class="brand-text">
+      <h1>document<em>Reader</em></h1>
+      <p>ask your document anything</p>
+    </div>
+  </div>
+  <div class="doc-status" id="doc-status">
+    <div style="display:flex; align-items:center; gap:8px;">
+      <button class="history-btn" id="history-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+        <span>History</span>
+        <span class="history-count" id="history-count">0</span>
+      </button>
+      <button type="button" class="history-btn" id="change-api-key-btn" title="Change GroqCloud API key">API Key</button>
+    </div>
+  </div>
+  <div id="history-panel">
+    <button class="history-add-btn" id="history-add-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+      Add new document
+    </button>
+    <div id="history-list"></div>
+  </div>
+</header>
+
+<div id="upload-screen">
+  <div class="upload-card">
+    <button class="link-btn back-to-docs" id="back-to-docs-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+      Back to your documents
+    </button>
+    <div class="upload-eyebrow">Retrieval-augmented Q&amp;A</div>
+    <h2>Chat with your own document</h2>
+    <p class="sub">Upload a report, resume, or set of notes. Every answer is extracted from the text itself and shown with its exact source highlighted — nothing guessed, nothing outside the page.</p>
+
+    <div class="dropzone" id="dropzone">
+      <div class="glyph">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+      </div>
+      <h3>Drop a document here</h3>
+      <p>or click to browse your files</p>
+      <div class="format-chips">
+        <span class="format-chip">PDF</span>
+        <span class="format-chip">DOCX</span>
+        <span class="format-chip">TXT</span>
+        <span class="format-chip">MD</span>
+      </div>
+    </div>
+    <input type="file" id="file-input" accept=".txt,.md,.pdf,.docx">
+
+    <div class="upload-meta" id="upload-meta"><span class="spinner"></span><span id="upload-meta-text">Reading document...</span></div>
+    <div id="upload-error"></div>
+
+    <div class="sample-row">
+      <div class="rule"></div>
+      <button class="link-btn" id="sample-btn">or try a sample report</button>
+      <div class="rule"></div>
+    </div>
+  </div>
+</div>
+
+<div id="source-backdrop"></div>
+
+<div id="workspace">
+  <div class="pane" id="source-pane">
+    <div class="pane-header">
+      <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Source</h3>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span class="meta" id="source-meta"></span>
+        <button class="close-drawer-btn" id="close-source-btn" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="pane-body">
+      <div id="source-text"></div>
+    </div>
+  </div>
+
+  <div class="pane" id="chat-pane">
+    <div class="pane-header">
+      <h3>Questions</h3>
+      <div style="display:flex; align-items:center; gap:12px;">
+        <span class="meta" id="chat-meta"></span>
+        <button class="view-source-btn" id="view-source-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          View source
+        </button>
+      </div>
+    </div>
+    <div id="chat-log">
+      <div class="empty-chat" id="empty-chat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <div>Ask anything about the document. Answers are extracted from the text you uploaded, with highlighted citations you can click.</div>
+      </div>
+    </div>
+    <div id="input-bar">
+      <div class="compare-row">
+        <input type="checkbox" id="compare-toggle">
+        <label for="compare-toggle">Also show what an ungrounded (no-document) answer would look like, for comparison</label>
+      </div>
+      <div class="ask-row">
+        <textarea id="question-input" placeholder="Ask a question about this document..." rows="1"></textarea>
+        <button class="ask-btn" id="ask-btn" aria-label="Ask">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="footer-bar">
+  <span class="hint" id="footer-hint">Ask a few questions, then generate a summary of how grounding affected answer quality.</span>
+  <button class="summary-btn" id="summary-btn" disabled>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+    Generate project summary
+  </button>
+</div>
+
+<div id="summary-overlay">
+  <div id="summary-modal">
+    <div class="modal-header">
+      <h3>Project summary</h3>
+      <button class="link-btn" id="close-summary-btn">close</button>
+    </div>
+    <div class="modal-body" id="summary-body"></div>
+    <div class="modal-footer">
+      <button class="plain-icon-btn" id="download-summary-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        Download as .md
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+
+  var STATE = {
+    documents: [],
+    activeId: null,
+    nextId: 1
+  };
+
+  var STOPWORDS = new Set(['a','an','the','is','are','was','were','be','been','being','of','to','in','on','at','for','with','by','from','as','and','or','but','if','so','it','its','this','that','these','those','i','you','he','she','they','we','what','which','who','whom','not','no','do','does','did','has','have','had','will','would','can','could','should','shall','may','might','must','about','into','than','then','there','here','their','his','her','our','your','my']);
+
+  var SAMPLE_DOC = "NIMBUS ROBOTICS INC. \u2014 INTERNAL Q3 2026 REPORT\nPrepared for: All-Hands Meeting, October 14, 2026\nClassification: Internal Use Only\n\n1. COMPANY OVERVIEW\n\nNimbus Robotics Inc. was founded in March 2021 by Priya Chandrasekaran and Tomas Ericsson in Boulder, Colorado. The company designs and manufactures modular warehouse robots under the product line \"Hopper,\" aimed at small-to-mid-sized fulfillment centers that cannot afford full Amazon-scale automation. As of Q3 2026, Nimbus employs 214 people across three offices: Boulder (HQ, 140 employees), Austin (52 employees, manufacturing liaison), and a small Berlin sales office (22 employees).\n\nThe company's mission statement, adopted at the 2023 board retreat, is: \"Make warehouse automation accessible to businesses with fewer than 500 employees.\"\n\n2. PRODUCT LINE\n\nThe flagship product is the Hopper-3, a modular pick-and-carry robot released in June 2025. It succeeded the Hopper-2 (released January 2023) and the original Hopper-1 prototype (2021, never sold commercially). The Hopper-3 has a maximum payload of 68 kilograms, a battery life of 9.5 hours under typical warehouse load, and a recharge time of 47 minutes using the fast-dock system introduced in firmware version 4.2.\n\nIn Q3 2026, Nimbus also launched a software-only product called \"Nimbus Fleet Console,\" a subscription-based dashboard that lets warehouse managers coordinate up to 40 Hopper units simultaneously. Fleet Console costs $1,200 per month per warehouse site, regardless of the number of robots deployed.\n\n3. FINANCIAL SUMMARY \u2014 Q3 2026\n\nTotal revenue for Q3 2026 was $18.4 million, up 22% from Q2 2026's $15.1 million. Hardware sales (Hopper-3 units) accounted for $14.2 million of this total, while Fleet Console subscriptions and other software/services made up the remaining $4.2 million.\n\nGross margin for the quarter was 41%, an improvement from 36% in Q2, attributed primarily to the renegotiated battery-cell supply contract signed with PowerCell Dynamics in July 2026.\n\nNimbus raised a $60 million Series C round in April 2026, led by Meridian Growth Partners, with participation from existing investors Blue Anchor Ventures and Third Compass Capital. This brought total funding raised to date to $103 million. The company reported $41 million in cash reserves at the end of Q3 2026, giving an estimated runway of approximately 14 months at current burn rate if revenue growth were to stall.\n\n4. CUSTOMERS\n\nAs of the end of Q3 2026, Nimbus has 37 active warehouse customers operating a combined fleet of 612 Hopper robots. The largest customer is Redwood Grocers Distribution, which operates 84 units across two facilities in Sacramento and Reno. The next-largest deployment is at Fenwick Auto Parts, with 61 units in a single Columbus, Ohio facility.\n\nCustomer churn for the quarter was low: only one customer (a small e-commerce fulfillment startup called QuickCrate) discontinued service, citing a shift to a different automation vendor.\n\n5. HEADCOUNT AND HIRING\n\nNimbus grew from 178 employees at the start of Q3 to 214 by the end of the quarter, a net addition of 36 people. Of these, 21 were engineering hires (mostly firmware and computer vision roles), 9 were in sales and customer success, and 6 were in manufacturing operations in Austin.\n\nThe company plans to open a fourth office in late 2026 or early 2027, most likely in either Toronto or Chicago, to support expansion into the Great Lakes distribution corridor. No final decision on the new office location had been made as of the report date.\n\n6. PRODUCT ROADMAP\n\nThe engineering team is currently developing the Hopper-4, targeted for a limited pilot release in Q2 2027. Planned improvements include a 15% increase in payload capacity (targeting 78 kilograms), swappable battery packs to reduce downtime during shift changes, and an upgraded LIDAR system sourced from a new supplier, Veyron Sensing.\n\nA secondary roadmap item is an API integration layer allowing Fleet Console to connect directly with major warehouse management systems (WMS), starting with SAP Extended Warehouse Management and Manhattan Associates' WMS platform. This integration is scheduled for beta testing in January 2027.\n\n7. RISKS AND CHALLENGES\n\nThe report flags three primary risks for Q4 2026 and beyond:\n\nFirst, battery-cell supply remains a bottleneck despite the improved PowerCell Dynamics contract; a single-supplier dependency could affect production if PowerCell experiences disruptions.\n\nSecond, two competitors \u2014 Atlas Warehouse Systems and a stealth-mode startup rumored to be backed by a major logistics company \u2014 are reportedly targeting the same mid-market segment Nimbus serves.\n\nThird, the report notes that Nimbus has not yet achieved profitability and continues to operate at a net loss, though the loss narrowed to $2.1 million in Q3 2026 compared to $3.8 million in Q2 2026.\n\n8. CLOSING NOTES FROM LEADERSHIP\n\nCEO Priya Chandrasekaran closed the report with a note thanking the team for hitting the Q3 revenue target and reiterating the company's goal of reaching operating profitability by Q4 2027. CTO Tomas Ericsson added a brief technical note that the Hopper-4's computer vision stack will move from the current third-party model to an in-house model trained on Nimbus's own warehouse imagery dataset, which now exceeds 2.3 million labeled images.";
+
+  function escapeHtml(s){
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function tokenize(text){
+    var raw = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(function(t){ return t.length > 1 && !STOPWORDS.has(t); });
+    var grams = raw.slice();
+    for(var i=0; i<raw.length-1; i++){
+      grams.push(raw[i] + '_' + raw[i+1]);
+    }
+    return grams;
+  }
+
+  function chunkText(text){
+    var paragraphs = text.split(/\n\s*\n/).map(function(p){ return p.trim(); }).filter(function(p){ return p.length > 0; });
+    if(paragraphs.length === 0) paragraphs = [text.trim()];
+
+    var chunkSize = 130, overlap = 30;
+    var chunks = [];
+    var current = [];
+
+    paragraphs.forEach(function(para){
+      var words = para.split(/\s+/);
+      if(current.length + words.length > chunkSize && current.length > 0){
+        chunks.push(current.join(' '));
+        current = overlap > 0 ? current.slice(-overlap) : [];
+      }
+      current = current.concat(words);
+    });
+    if(current.length > 0) chunks.push(current.join(' '));
+    return chunks.length ? chunks : [text.trim()];
+  }
+
+  function buildIndex(chunks){
+    var vocabSet = new Set();
+    var docFreq = {};
+    var tokenized = chunks.map(function(c){
+      var toks = tokenize(c);
+      var seen = new Set();
+      toks.forEach(function(t){
+        vocabSet.add(t);
+        if(!seen.has(t)){ docFreq[t] = (docFreq[t] || 0) + 1; seen.add(t); }
+      });
+      return toks;
+    });
+
+    var N = chunks.length;
+    var idf = {};
+    vocabSet.forEach(function(term){
+      idf[term] = Math.log(N / (1 + docFreq[term])) + 1;
+    });
+
+    var vectors = tokenized.map(function(toks){
+      var tf = {};
+      toks.forEach(function(t){ tf[t] = (tf[t] || 0) + 1; });
+      var vec = {};
+      var norm = 0;
+      Object.keys(tf).forEach(function(term){
+        var w = tf[term] * idf[term];
+        vec[term] = w;
+        norm += w * w;
+      });
+      norm = Math.sqrt(norm) || 1;
+      Object.keys(vec).forEach(function(term){ vec[term] = vec[term] / norm; });
+      return vec;
+    });
+
+    return { idf: idf, vectors: vectors };
+  }
+
+  function vectorizeQuery(question, idf){
+    var toks = tokenize(question);
+    var tf = {};
+    toks.forEach(function(t){ tf[t] = (tf[t] || 0) + 1; });
+    var vec = {};
+    var norm = 0;
+    Object.keys(tf).forEach(function(term){
+      if(idf[term] === undefined) return;
+      var w = tf[term] * idf[term];
+      vec[term] = w;
+      norm += w * w;
+    });
+    norm = Math.sqrt(norm) || 1;
+    Object.keys(vec).forEach(function(term){ vec[term] = vec[term] / norm; });
+    return vec;
+  }
+
+  function cosineSim(vecA, vecB){
+    var sum = 0;
+    var keys = Object.keys(vecA).length < Object.keys(vecB).length ? Object.keys(vecA) : Object.keys(vecB);
+    keys.forEach(function(k){
+      if(vecA[k] !== undefined && vecB[k] !== undefined) sum += vecA[k] * vecB[k];
+    });
+    return sum;
+  }
+
+  function getActiveDoc(){
+    return STATE.documents.find(function(d){ return d.id === STATE.activeId; }) || null;
+  }
+
+  function retrieve(doc, question, topK){
+    var qVec = vectorizeQuery(question, doc.idf);
+    var scored = doc.chunkVectors.map(function(vec, i){
+      return { index: i, score: cosineSim(qVec, vec), text: doc.chunks[i] };
+    });
+    scored.sort(function(a,b){ return b.score - a.score; });
+    return scored.slice(0, topK);
+  }
+
+  // ---------------- Document loading ----------------
+
+  function fileTypeLabel(name){
+    var lower = name.toLowerCase();
+    if(lower.endsWith('.pdf')) return 'PDF';
+    if(lower.endsWith('.docx')) return 'DOCX';
+    if(lower.endsWith('.md')) return 'MD';
+    return 'TXT';
+  }
+
+  function addDocumentToHistory(name, text){
+    if(!text || !text.trim()){
+      showUploadError('That document appears to be empty, or its text could not be extracted. Try a different file.');
+      setUploadLoading(false);
+      return;
+    }
+
+    var chunks = chunkText(text);
+    var idx = buildIndex(chunks);
+
+    var doc = {
+      id: STATE.nextId++,
+      name: name,
+      type: fileTypeLabel(name),
+      addedAt: Date.now(),
+      rawText: text,
+      chunks: chunks,
+      idf: idx.idf,
+      chunkVectors: idx.vectors,
+      qaHistory: [],
+      hallucinationFlags: []
+    };
+
+    STATE.documents.push(doc);
+    activateDocument(doc.id);
+    setUploadLoading(false);
+  }
+
+  function activateDocument(id){
+    var doc = STATE.documents.find(function(d){ return d.id === id; });
+    if(!doc) return;
+    STATE.activeId = id;
+
+    renderSource(doc);
+    renderDocStatus(doc);
+
+    document.getElementById('source-meta').textContent = doc.chunks.length + ' passages';
+    document.getElementById('chat-meta').textContent = doc.qaHistory.length + (doc.qaHistory.length === 1 ? ' question asked' : ' questions asked');
+
+    document.getElementById('upload-screen').style.display = 'none';
+    document.getElementById('workspace').classList.add('active');
+    document.getElementById('footer-bar').classList.add('active');
+
+    renderChatFromHistory(doc);
+    renderHistoryList();
+    closeHistoryPanel();
+    closeSourceDrawer();
+    document.getElementById('summary-btn').disabled = doc.qaHistory.length < 1;
+    document.getElementById('question-input').focus();
+  }
+
+  function renderDocStatus(doc){
+    var el = document.getElementById('doc-status');
+    el.innerHTML =
+      '<div class="doc-badge"><span class="type-chip">' + doc.type + '</span>' +
+      '<span class="doc-name">' + escapeHtml(doc.name) + '</span>' +
+      '<span class="doc-meta">' + doc.chunks.length + ' chunks</span></div>' +
+      '<div style="display:flex; align-items:center; gap:8px;">' +
+      '<button class="history-btn" id="history-btn">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>' +
+      '<span>History</span><span class="history-count" id="history-count">' + STATE.documents.length + '</span>' +
+      '</button>' +
+      '<button type="button" class="history-btn" id="change-api-key-btn" title="Change GroqCloud API key">API Key</button>' +
+      '</div>';
+    document.getElementById('history-btn').addEventListener('click', toggleHistoryPanel);
+  }
+
+  function renderSource(doc){
+    var container = document.getElementById('source-text');
+    container.innerHTML = '';
+    doc.chunks.forEach(function(chunk, i){
+      var span = document.createElement('span');
+      span.className = 'chunk';
+      span.id = 'chunk-' + i;
+      span.textContent = chunk + ' ';
+      container.appendChild(span);
+    });
+  }
+
+  function showUploadError(msg){
+    var el = document.getElementById('upload-error');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function clearUploadError(){
+    document.getElementById('upload-error').style.display = 'none';
+  }
+
+  function setUploadLoading(isLoading, text){
+    var el = document.getElementById('upload-meta');
+    if(isLoading){
+      document.getElementById('upload-meta-text').textContent = text || 'Reading document...';
+      el.classList.add('active');
+    } else {
+      el.classList.remove('active');
+    }
+  }
+
+  function readFileAsText(file){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onload = function(){ resolve(reader.result); };
+      reader.onerror = function(){ reject(new Error('Could not read the file.')); };
+      reader.readAsText(file);
+    });
+  }
+
+  function readPdfAsText(file){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onload = function(){
+        var typedArray = new Uint8Array(reader.result);
+        if(typeof pdfjsLib === 'undefined'){
+          reject(new Error('The PDF reader library failed to load. Check your connection and try again, or use a .txt file instead.'));
+          return;
+        }
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        pdfjsLib.getDocument({ data: typedArray }).promise.then(function(pdf){
+          var pagePromises = [];
+          for(var p=1; p<=pdf.numPages; p++){
+            pagePromises.push(pdf.getPage(p).then(function(page){
+              return page.getTextContent().then(function(content){
+                return content.items.map(function(it){ return it.str; }).join(' ');
+              });
+            }));
+          }
+          Promise.all(pagePromises).then(function(pages){
+            resolve(pages.join('\n\n'));
+          }).catch(reject);
+        }).catch(function(){
+          reject(new Error('Could not parse this PDF. It may be scanned/image-only, password-protected, or corrupted.'));
+        });
+      };
+      reader.onerror = function(){ reject(new Error('Could not read the file.')); };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function readDocxAsText(file){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onload = function(){
+        if(typeof mammoth === 'undefined'){
+          reject(new Error('The Word document reader library failed to load. Check your connection and try again.'));
+          return;
+        }
+        mammoth.extractRawText({ arrayBuffer: reader.result })
+          .then(function(result){ resolve(result.value); })
+          .catch(function(){ reject(new Error('Could not parse this .docx file. It may be corrupted or in an unsupported format.')); });
+      };
+      reader.onerror = function(){ reject(new Error('Could not read the file.')); };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function handleFile(file){
+    clearUploadError();
+    if(!file){ return; }
+
+    var maxBytes = 6 * 1024 * 1024;
+    if(file.size > maxBytes){
+      showUploadError('That file is larger than 6 MB. Try a shorter document.');
+      return;
+    }
+
+    var name = file.name || 'document';
+    var lower = name.toLowerCase();
+
+    var handler;
+    if(lower.endsWith('.pdf')){
+      setUploadLoading(true, 'Extracting text from PDF...');
+      handler = readPdfAsText(file);
+    } else if(lower.endsWith('.docx')){
+      setUploadLoading(true, 'Extracting text from Word document...');
+      handler = readDocxAsText(file);
+    } else if(lower.endsWith('.txt') || lower.endsWith('.md') || file.type === 'text/plain'){
+      setUploadLoading(true, 'Reading document...');
+      handler = readFileAsText(file);
+    } else {
+      showUploadError('Unsupported file type. Please upload a .pdf, .docx, .txt, or .md file.');
+      return;
+    }
+
+    handler.then(function(text){
+      setUploadLoading(true, 'Indexing passages...');
+      setTimeout(function(){ addDocumentToHistory(name, text); }, 120);
+    }).catch(function(err){
+      setUploadLoading(false);
+      showUploadError(err && err.message ? err.message : 'Something went wrong reading that file.');
+    });
+  }
+
+  // ---------------- History panel ----------------
+
+  function toggleHistoryPanel(){
+    var panel = document.getElementById('history-panel');
+    if(panel.classList.contains('open')){
+      closeHistoryPanel();
+    } else {
+      renderHistoryList();
+      panel.classList.add('open');
+    }
+  }
+
+  function closeHistoryPanel(){
+    document.getElementById('history-panel').classList.remove('open');
+  }
+
+  function relativeTime(ts){
+    var diff = Math.max(0, Date.now() - ts);
+    var mins = Math.floor(diff / 60000);
+    if(mins < 1) return 'just now';
+    if(mins < 60) return mins + 'm ago';
+    var hrs = Math.floor(mins / 60);
+    if(hrs < 24) return hrs + 'h ago';
+    var days = Math.floor(hrs / 24);
+    return days + 'd ago';
+  }
+
+  function renderHistoryList(){
+    var list = document.getElementById('history-list');
+    list.innerHTML = '';
+
+    if(STATE.documents.length === 0){
+      var empty = document.createElement('div');
+      empty.className = 'history-empty';
+      empty.textContent = 'No documents yet. Add one to get started.';
+      list.appendChild(empty);
+      return;
+    }
+
+    STATE.documents.slice().reverse().forEach(function(doc){
+      var item = document.createElement('button');
+      item.className = 'history-item' + (doc.id === STATE.activeId ? ' active' : '');
+
+      var chip = document.createElement('span');
+      chip.className = 'type-chip';
+      chip.textContent = doc.type;
+      item.appendChild(chip);
+
+      var main = document.createElement('div');
+      main.className = 'item-main';
+
+      var nameEl = document.createElement('div');
+      nameEl.className = 'item-name';
+      nameEl.textContent = doc.name;
+      main.appendChild(nameEl);
+
+      var metaEl = document.createElement('div');
+      metaEl.className = 'item-meta';
+      metaEl.textContent = doc.chunks.length + ' chunks \u00b7 ' + doc.qaHistory.length + ' asked \u00b7 ' + relativeTime(doc.addedAt);
+      main.appendChild(metaEl);
+
+      item.appendChild(main);
+
+      item.addEventListener('click', function(){
+        if(doc.id !== STATE.activeId){
+          activateDocument(doc.id);
+        } else {
+          closeHistoryPanel();
+        }
+      });
+
+      list.appendChild(item);
+    });
+  }
+
+  function goToUploadScreen(){
+    closeHistoryPanel();
+    closeSourceDrawer();
+    document.getElementById('workspace').classList.remove('active');
+    document.getElementById('footer-bar').classList.remove('active');
+    document.getElementById('upload-screen').style.display = 'flex';
+    document.getElementById('back-to-docs-btn').classList.toggle('visible', STATE.documents.length > 0);
+    clearUploadError();
+  }
+
+  function backToWorkspace(){
+    if(STATE.activeId !== null){
+      document.getElementById('upload-screen').style.display = 'none';
+      document.getElementById('workspace').classList.add('active');
+      document.getElementById('footer-bar').classList.add('active');
+    }
+  }
+
+  // ---------------- GroqCloud API calls ----------------
+  // Get your GroqCloud API key from https://console.groq.com/keys
+  // The key is stored only in this browser's localStorage for this demo.
+  // Groq's Chat Completions API is OpenAI-compatible.
+  function getGroqApiKey(){
+    var saved = localStorage.getItem('documentReaderGroqApiKey');
+    if(saved) return saved.trim();
+
+    var key = window.prompt(
+      'Enter your GroqCloud API key.\\n\\n' +
+      'Create a key at https://console.groq.com/keys and paste it here.'
+    );
+
+    if(!key || !key.trim()){
+      throw new Error('GroqCloud API key is required. Please enter your API key and try again.');
+    }
+
+    key = key.trim();
+    localStorage.setItem('documentReaderGroqApiKey', key);
+    return key;
+  }
+
+  function resetGroqApiKey(){
+    var current = localStorage.getItem('documentReaderGroqApiKey') || '';
+    var key = window.prompt(
+      'Enter your GroqCloud API key.\\n\\n' +
+      'Create/get your key at https://console.groq.com/keys',
+      current
+    );
+    if(key === null) return;
+    key = key.trim();
+    if(!key){
+      localStorage.removeItem('documentReaderGroqApiKey');
+      alert('GroqCloud API key removed. Enter a key when you ask a question.');
+      return;
+    }
+    localStorage.setItem('documentReaderGroqApiKey', key);
+    alert('GroqCloud API key saved successfully.');
+  }
+
+  function callGroq(system, userText){
+    var apiKey = getGroqApiKey();
+    var endpoint = 'https://api.groq.com/openai/v1/chat/completions';
+
+    return fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + apiKey
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: userText }
+        ],
+        max_completion_tokens: 1000,
+        temperature: 0.2
+      })
+    })
+    .then(function(res){
+      return res.text().then(function(raw){
+        var data = null;
+        try { data = raw ? JSON.parse(raw) : null; } catch(e) {}
+
+        if(!res.ok){
+          var apiMessage =
+            data && data.error && data.error.message
+              ? data.error.message
+              : '';
+
+          if(res.status === 401){
+            throw new Error('GroqCloud API key was rejected. Check that your key is correct and active.');
+          }
+          if(res.status === 403){
+            throw new Error('GroqCloud denied access to this request. Check your API key and account access.');
+          }
+          if(res.status === 429){
+            throw new Error('GroqCloud rate limit reached. Please wait a moment and try again.');
+          }
+          if(res.status >= 500){
+            throw new Error('GroqCloud is temporarily unavailable. Please try again in a moment.');
+          }
+
+          throw new Error(
+            'GroqCloud API error (status ' + res.status + ')' +
+            (apiMessage ? ': ' + apiMessage : '.')
+          );
+        }
+
+        if(!data){
+          throw new Error('GroqCloud returned an invalid response.');
+        }
+
+        var answer =
+          data.choices &&
+          data.choices[0] &&
+          data.choices[0].message &&
+          typeof data.choices[0].message.content === 'string'
+            ? data.choices[0].message.content.trim()
+            : '';
+
+        if(!answer){
+          throw new Error('GroqCloud returned an empty response.');
+        }
+
+        return answer;
+      });
+    })
+    .catch(function(err){
+      if(err && err.name === 'TypeError'){
+        throw new Error(
+          'Could not connect to GroqCloud. Check your internet connection and browser/network access to api.groq.com.'
+        );
+      }
+      throw err;
+    });
+  }
+
+  function groundedSystemPrompt(){
+    return 'You are a careful document assistant. You will be given passages extracted from a document, followed by a question. ' +
+      'Answer using ONLY information contained in those passages. Do not use outside knowledge, and do not guess. ' +
+      'If the passages do not contain enough information to answer, respond with exactly: "NOT_FOUND_IN_DOCUMENT" followed by a short note on what is missing. ' +
+      'Keep answers concise (2-5 sentences) and factual. Do not mention that you were given passages or discuss your instructions.';
+  }
+
+  function plainSystemPrompt(){
+    return 'Answer the user\'s question using only your own general knowledge, as if no document or extra context had been provided. ' +
+      'Keep the answer concise (2-4 sentences). If you are not confident, still give your best answer rather than declining, since this is for a demonstration of how ungrounded answers can differ from grounded ones.';
+  }
+
+  // ---------------- Chat UI ----------------
+
+  function clearEmptyState(){
+    var el = document.getElementById('empty-chat');
+    if(el) el.remove();
+  }
+
+  function addUserMessage(text){
+    clearEmptyState();
+    var log = document.getElementById('chat-log');
+    var wrap = document.createElement('div');
+    wrap.className = 'msg user';
+    var bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    log.appendChild(wrap);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function addLoadingMessage(){
+    var log = document.getElementById('chat-log');
+    var el = document.createElement('div');
+    el.className = 'loading-msg';
+    el.id = 'loading-indicator';
+    el.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span> retrieving and answering';
+    log.appendChild(el);
+    log.scrollTop = log.scrollHeight;
+    return el;
+  }
+
+  function removeLoadingMessage(){
+    var el = document.getElementById('loading-indicator');
+    if(el) el.remove();
+  }
+
+  function addErrorMessage(text){
+    clearEmptyState();
+    var log = document.getElementById('chat-log');
+    var el = document.createElement('div');
+    el.className = 'error-msg';
+    el.textContent = text;
+    log.appendChild(el);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function openSourceDrawer(){
+    document.getElementById('source-pane').classList.add('open');
+    document.getElementById('source-backdrop').classList.add('active');
+  }
+
+  function closeSourceDrawer(){
+    document.getElementById('source-pane').classList.remove('open');
+    document.getElementById('source-backdrop').classList.remove('active');
+  }
+
+  function flashChunk(index){
+    openSourceDrawer();
+    setTimeout(function(){
+      var el = document.getElementById('chunk-' + index);
+      if(!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('flash');
+      setTimeout(function(){ el.classList.remove('flash'); }, 700);
+    }, 320);
+  }
+
+  function litChunks(indices){
+    document.querySelectorAll('#source-text .chunk.lit').forEach(function(el){ el.classList.remove('lit'); });
+    indices.forEach(function(i){
+      var el = document.getElementById('chunk-' + i);
+      if(el) el.classList.add('lit');
+    });
+  }
+
+  var ANSWER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>';
+  var NOTFOUND_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>';
+
+  function addAnswerMessage(doc, qaIndex, answerText, retrieved, notFound, plainText, plainRequested, initiallyFlagged){
+    clearEmptyState();
+    var log = document.getElementById('chat-log');
+
+    var wrap = document.createElement('div');
+    wrap.className = 'msg answer';
+
+    var block = document.createElement('div');
+    block.className = 'answer-block';
+
+    var label = document.createElement('div');
+    label.className = 'label';
+    label.innerHTML = (notFound ? NOTFOUND_ICON : ANSWER_ICON) + '<span>' + (notFound ? 'Not found in document' : 'Grounded answer') + '</span>';
+    block.appendChild(label);
+
+    var p = document.createElement('p');
+    p.textContent = answerText;
+    block.appendChild(p);
+
+    if(!notFound && retrieved && retrieved.length){
+      var cite = document.createElement('div');
+      cite.className = 'citations';
+      retrieved.forEach(function(r, i){
+        var chip = document.createElement('span');
+        chip.className = 'citation-chip';
+        chip.textContent = '[' + (i+1) + '] ' + r.score.toFixed(2);
+        chip.addEventListener('click', function(){ flashChunk(r.index); });
+        cite.appendChild(chip);
+      });
+      block.appendChild(cite);
+    }
+
+    if(notFound){
+      var banner = document.createElement('div');
+      banner.className = 'not-found-banner';
+      banner.textContent = 'Retrieval confidence was low — the document likely does not cover this.';
+      block.appendChild(banner);
+    }
+
+    wrap.appendChild(block);
+
+    if(plainRequested){
+      var plainWrap = document.createElement('div');
+      plainWrap.className = 'plain-block' + (initiallyFlagged ? ' flagged' : '');
+
+      var plainLabel = document.createElement('div');
+      plainLabel.className = 'label';
+
+      var labelText = document.createElement('span');
+      labelText.textContent = 'Ungrounded answer (no document)';
+      plainLabel.appendChild(labelText);
+
+      var flagBtn = document.createElement('button');
+      flagBtn.className = 'flag-btn' + (initiallyFlagged ? ' flagged' : '');
+      flagBtn.textContent = initiallyFlagged ? 'flagged' : 'flag as hallucinated';
+      flagBtn.addEventListener('click', function(){
+        var already = doc.hallucinationFlags.indexOf(qaIndex) !== -1;
+        if(already){
+          doc.hallucinationFlags = doc.hallucinationFlags.filter(function(x){ return x !== qaIndex; });
+          flagBtn.classList.remove('flagged');
+          flagBtn.textContent = 'flag as hallucinated';
+          plainWrap.classList.remove('flagged');
+        } else {
+          doc.hallucinationFlags.push(qaIndex);
+          flagBtn.classList.add('flagged');
+          flagBtn.textContent = 'flagged';
+          plainWrap.classList.add('flagged');
+        }
+      });
+      plainLabel.appendChild(flagBtn);
+
+      plainWrap.appendChild(plainLabel);
+
+      var plainP = document.createElement('p');
+      plainP.textContent = plainText;
+      plainWrap.appendChild(plainP);
+
+      wrap.appendChild(plainWrap);
+    }
+
+    log.appendChild(wrap);
+    log.scrollTop = log.scrollHeight;
+
+    if(!notFound && retrieved && retrieved.length){
+      litChunks(retrieved.map(function(r){ return r.index; }));
+    }
+  }
+
+  function renderChatFromHistory(doc){
+    var log = document.getElementById('chat-log');
+    log.innerHTML = '';
+
+    if(doc.qaHistory.length === 0){
+      log.innerHTML = '<div class="empty-chat" id="empty-chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><div>Ask anything about the document. Answers are extracted from the text you uploaded, with highlighted citations you can click.</div></div>';
+      return;
+    }
+
+    doc.qaHistory.forEach(function(qa, i){
+      addUserMessage(qa.question);
+      var retrieved = (qa.retrievalIndices || []).map(function(idx, j){
+        return { index: idx, score: qa.retrievalScores[j] || 0 };
+      });
+      var flagged = doc.hallucinationFlags.indexOf(i) !== -1;
+      addAnswerMessage(doc, i, qa.groundedAnswer, retrieved, qa.notFound, qa.plainAnswer, !!qa.plainAnswer, flagged);
+    });
+
+    // clear any stray highlight from replay so the pane isn't mid-lit on load
+    document.querySelectorAll('#source-text .chunk.lit').forEach(function(el){ el.classList.remove('lit'); });
+  }
+
+  function setAsking(isAsking){
+    var btn = document.getElementById('ask-btn');
+    btn.disabled = isAsking;
+  }
+
+  function handleAsk(){
+    var doc = getActiveDoc();
+    var input = document.getElementById('question-input');
+    var question = input.value.trim();
+    if(!question) return;
+    if(!doc){
+      addErrorMessage('Load a document before asking questions.');
+      return;
+    }
+
+    var compareOn = document.getElementById('compare-toggle').checked;
+
+    addUserMessage(question);
+    input.value = '';
+    input.style.height = '44px';
+    setAsking(true);
+    addLoadingMessage();
+
+    var retrieved = retrieve(doc, question, 3);
+    var contextText = retrieved.map(function(r, i){ return '[' + (i+1) + '] ' + r.text; }).join('\n\n');
+    var userPrompt = 'Passages:\n\n' + contextText + '\n\nQuestion: ' + question;
+
+    var groundedPromise = callGroq(groundedSystemPrompt(), userPrompt);
+    var plainPromise = compareOn ? callGroq(plainSystemPrompt(), question) : Promise.resolve(null);
+
+    Promise.all([groundedPromise, plainPromise]).then(function(results){
+      removeLoadingMessage();
+      setAsking(false);
+
+      var groundedRaw = results[0];
+      var plainText = results[1];
+      var notFound = groundedRaw.indexOf('NOT_FOUND_IN_DOCUMENT') === 0;
+      var answerText = notFound ? groundedRaw.replace('NOT_FOUND_IN_DOCUMENT', '').replace(/^[:\-\s]+/, '') || 'This isn\'t covered in the document.' : groundedRaw;
+
+      var qaIndex = doc.qaHistory.length;
+
+      addAnswerMessage(doc, qaIndex, answerText, retrieved, notFound, plainText, compareOn, false);
+
+      doc.qaHistory.push({
+        question: question,
+        groundedAnswer: answerText,
+        notFound: notFound,
+        plainAnswer: plainText,
+        retrievalIndices: retrieved.map(function(r){ return r.index; }),
+        retrievalScores: retrieved.map(function(r){ return r.score; })
+      });
+
+      document.getElementById('summary-btn').disabled = doc.qaHistory.length < 1;
+      document.getElementById('chat-meta').textContent = doc.qaHistory.length + (doc.qaHistory.length === 1 ? ' question asked' : ' questions asked');
+    }).catch(function(err){
+      removeLoadingMessage();
+      setAsking(false);
+      addErrorMessage(err && err.message ? err.message : 'Something went wrong getting an answer. Please try again.');
+    });
+  }
+
+  // ---------------- Summary generation ----------------
+
+  function generateSummary(){
+    var doc = getActiveDoc();
+    if(!doc || doc.qaHistory.length === 0) return;
+
+    var btn = document.getElementById('summary-btn');
+    btn.disabled = true;
+    var originalHtml = btn.innerHTML;
+    btn.textContent = 'Generating...';
+
+    var transcript = doc.qaHistory.map(function(qa, i){
+      var lines = [];
+      lines.push((i+1) + '. Q: ' + qa.question);
+      lines.push('   Grounded answer: ' + (qa.notFound ? '[not found in document] ' + qa.groundedAnswer : qa.groundedAnswer));
+      lines.push('   Top retrieval score: ' + (qa.retrievalScores[0] !== undefined ? qa.retrievalScores[0].toFixed(3) : 'n/a'));
+      if(qa.plainAnswer){
+        var flagged = doc.hallucinationFlags.indexOf(i) !== -1;
+        lines.push('   Ungrounded answer: ' + qa.plainAnswer + (flagged ? '  [FLAGGED BY USER AS POSSIBLE HALLUCINATION]' : ''));
+      }
+      return lines.join('\n');
+    }).join('\n\n');
+
+    var system = 'You are helping write a short project summary for a RAG (Retrieval-Augmented Generation) mini-project. ' +
+      'You will be given a transcript of questions asked against a document, the grounded (document-based) answers with retrieval confidence scores, ' +
+      'and in some cases an ungrounded answer for comparison, possibly flagged by the user as a suspected hallucination. ' +
+      'Write a concise summary (250-400 words) covering: (1) how grounding in the document changed answer quality vs a plain/ungrounded prompt, ' +
+      'citing 1-2 specific examples from the transcript, (2) any flagged or likely hallucinations and why they happened, ' +
+      '(3) a one-line takeaway. Write in plain prose, no headers, no markdown formatting, professional but not stiff.';
+
+    var userText = 'Document name: ' + doc.name + '\nNumber of chunks indexed: ' + doc.chunks.length + '\n\nTranscript:\n\n' + transcript;
+
+    callGroq(system, userText).then(function(summary){
+      document.getElementById('summary-body').textContent = summary;
+      document.getElementById('summary-overlay').classList.add('active');
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }).catch(function(err){
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+      alert(err && err.message ? err.message : 'Could not generate the summary. Please try again.');
+    });
+  }
+
+  function downloadSummary(){
+    var doc = getActiveDoc();
+    var text = document.getElementById('summary-body').textContent;
+    if(!text) return;
+    var blob = new Blob([
+      '# RAG Mini-Project Summary\n\nDocument: ' + (doc ? doc.name : '') + '\n\n' + text
+    ], { type: 'text/markdown' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'rag_project_summary.md';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // ---------------- Wiring ----------------
+
+  document.getElementById('dropzone').addEventListener('click', function(){
+    document.getElementById('file-input').click();
+  });
+
+  document.getElementById('file-input').addEventListener('change', function(e){
+    if(e.target.files && e.target.files[0]) handleFile(e.target.files[0]);
+  });
+
+  var dz = document.getElementById('dropzone');
+  ['dragenter','dragover'].forEach(function(evt){
+    dz.addEventListener(evt, function(e){ e.preventDefault(); dz.classList.add('dragover'); });
+  });
+  ['dragleave','drop'].forEach(function(evt){
+    dz.addEventListener(evt, function(e){ e.preventDefault(); dz.classList.remove('dragover'); });
+  });
+  dz.addEventListener('drop', function(e){
+    if(e.dataTransfer.files && e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  });
+
+  document.getElementById('sample-btn').addEventListener('click', function(){
+    setUploadLoading(true, 'Indexing sample report...');
+    setTimeout(function(){
+      addDocumentToHistory('Nimbus Robotics — Q3 2026 Report (sample)', SAMPLE_DOC);
+    }, 150);
+  });
+
+  document.getElementById('history-btn').addEventListener('click', toggleHistoryPanel);
+
+  document.getElementById('history-add-btn').addEventListener('click', function(){
+    goToUploadScreen();
+  });
+
+  document.getElementById('back-to-docs-btn').addEventListener('click', function(){
+    backToWorkspace();
+  });
+
+  document.addEventListener('click', function(e){
+    var panel = document.getElementById('history-panel');
+    if(!panel.classList.contains('open')) return;
+    var isHistoryBtn = e.target.closest && e.target.closest('#history-btn');
+    var isInsidePanel = e.target.closest && e.target.closest('#history-panel');
+    if(!isHistoryBtn && !isInsidePanel){
+      closeHistoryPanel();
+    }
+  });
+
+  document.getElementById('close-source-btn').addEventListener('click', closeSourceDrawer);
+  document.getElementById('source-backdrop').addEventListener('click', closeSourceDrawer);
+  document.getElementById('view-source-btn').addEventListener('click', function(){
+    openSourceDrawer();
+  });
+
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape'){
+      closeSourceDrawer();
+      closeHistoryPanel();
+    }
+  });
+
+  // API-key button uses delegated handling because renderDocStatus() replaces its HTML.
+  document.addEventListener('click', function(e){
+    var apiBtn = e.target.closest && e.target.closest('#change-api-key-btn');
+    if(apiBtn){
+      e.preventDefault();
+      e.stopPropagation();
+      resetGroqApiKey();
+    }
+  });
+
+  document.getElementById('ask-btn').addEventListener('click', handleAsk);
+
+  var qInput = document.getElementById('question-input');
+  qInput.addEventListener('keydown', function(e){
+    if(e.key === 'Enter' && !e.shiftKey){
+      e.preventDefault();
+      handleAsk();
+    }
+  });
+  qInput.addEventListener('input', function(){
+    qInput.style.height = '44px';
+    qInput.style.height = Math.min(qInput.scrollHeight, 120) + 'px';
+  });
+
+  document.getElementById('summary-btn').addEventListener('click', generateSummary);
+  document.getElementById('close-summary-btn').addEventListener('click', function(){
+    document.getElementById('summary-overlay').classList.remove('active');
+  });
+  document.getElementById('download-summary-btn').addEventListener('click', downloadSummary);
+  document.getElementById('summary-overlay').addEventListener('click', function(e){
+    if(e.target.id === 'summary-overlay') document.getElementById('summary-overlay').classList.remove('active');
+  });
+
+</script>
+</body>
+</html>
